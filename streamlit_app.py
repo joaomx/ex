@@ -78,8 +78,7 @@ def get_engine():
                 conn.execute(text("ALTER TABLE evento_empresa ADD COLUMN arquivo_pdf_id INTEGER"))
     # Criar tabelas faltantes
     Base.metadata.create_all(engine)
-    return engine(engine)
-    return engine
+    return enginereturn engine
 
 def get_session():
     engine = get_engine()
