@@ -190,7 +190,7 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
         'Inserir Accionista'
     ])
 
-    # Formulário para Criação de Empresa (sem select de empresa)
+    # Criação Empresa
     if tipo == 'Criação Empresa':
         st.subheader('Dados da Criação de Empresa')
         with st.form('form_criacao_empresa', clear_on_submit=True):
@@ -204,11 +204,10 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
             try:
                 nova_emp = Empresa(
                     nome=nome_emp,
-                    forma_juridica='SA',  # ajuste conforme necessário
+                    forma_juridica='SA',
                     data_constituicao=data_ev
                 )
-                session.add(nova_emp)
-                session.commit()
+                session.add(nova_emp); session.commit()
                 detalhes_val = {'capital_social': cap_emp, 'morada': morada_emp}
                 novo_ev = EventoEmpresa(
                     empresa_id=nova_emp.empresa_id,
@@ -218,14 +217,12 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
                     detalhes=detalhes_val,
                     arquivo_pdf_id=sel.file_id
                 )
-                session.add(novo_ev)
-                session.commit()
+                session.add(novo_ev); session.commit()
                 st.success('Empresa criada e evento registado.')
             except Exception as e:
-                session.rollback()
-                st.error(f'Erro: {e}')
+                session.rollback(); st.error(f'Erro: {e}')
 
-    # Formulário para Inserir Accionista (com select de empresa)
+    # Inserir Accionista
     elif tipo == 'Inserir Accionista':
         st.subheader('Dados do Acionista')
         with st.form('form_insert_accionista', clear_on_submit=True):
@@ -258,10 +255,35 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
                 session.add(novo_ev); session.commit()
                 st.success('Acionista inserido e evento registado.')
             except Exception as e:
-                session.rollback()
-                st.error(f'Erro: {e}')
+                session.rollback(); st.error(f'Erro: {e}')
 
-    # Formulário genérico para os outros tipos
+    # Alteração de Contrato e Aumento de Capital
+    elif tipo == 'alteracao_contrato_aumento_capital':
+        st.subheader('Dados de Alteração de Contrato e Aumento de Capital')
+        with st.form('form_alteracao_contrato', clear_on_submit=True):
+            data_ev = st.date_input('Data do Evento')
+            emp_list = session.query(Empresa).all()
+            emp = st.selectbox('Empresa', emp_list, format_func=lambda e: e.nome)
+            montante = st.text_input('Montante do Aumento')
+            observacoes = st.text_area('Observações')
+            submit = st.form_submit_button('Registrar Alteração')
+        if submit:
+            try:
+                detalhes_val = {'montante_aumento': montante, 'observacoes': observacoes}
+                novo_ev = EventoEmpresa(
+                    empresa_id=emp.empresa_id,
+                    socio_id=None,
+                    data_evento=data_ev,
+                    tipo=tipo,
+                    detalhes=detalhes_val,
+                    arquivo_pdf_id=sel.file_id
+                )
+                session.add(novo_ev); session.commit()
+                st.success('Evento de alteração registado com sucesso.')
+            except Exception as e:
+                session.rollback(); st.error(f'Erro: {e}')
+
+    # Outros tipos genéricos
     else:
         st.subheader('Dados do Evento')
         with st.form('form_process_event', clear_on_submit=True):
@@ -287,10 +309,7 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
                 session.add(novo_ev); session.commit()
                 st.success('Evento registado com sucesso.')
             except Exception as e:
-                session.rollback()
-                st.error(f'Erro: {e}')
-
-
+                session.rollback(); st.error(f'Erro: {e}')
 # ----------------------
 def render_visualizar(session, Empresa, Socio, EventoEmpresa):
     st.header("Visualizar Registos")
