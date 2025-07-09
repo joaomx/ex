@@ -63,25 +63,20 @@ def define_models():
 # ----------------------
 # INICIALIZAÇÃO DB
 # ----------------------
-
 def get_engine():
     """
-    Inicializa o engine SQLite, aplica migrações leves para colunas adicionais
-    e cria as tabelas caso não existam.
+    Inicializa o engine SQLite, aplica migrações leves e cria tabelas.
     """
     new_db = not os.path.exists(DB_FILE)
     engine = create_engine(DB_URL, connect_args={'check_same_thread': False})
     if not new_db:
         with engine.connect() as conn:
-            # Migração para coluna 'nif' em 'socio'
             cols_socio = [r[1] for r in conn.execute(text("PRAGMA table_info(socio)"))]
             if 'nif' not in cols_socio:
                 conn.execute(text("ALTER TABLE socio ADD COLUMN nif TEXT"))
-            # Migração para coluna 'arquivo_pdf_id' em 'evento_empresa'
             cols_evt = [r[1] for r in conn.execute(text("PRAGMA table_info(evento_empresa)"))]
             if 'arquivo_pdf_id' not in cols_evt:
                 conn.execute(text("ALTER TABLE evento_empresa ADD COLUMN arquivo_pdf_id INTEGER"))
-    # Cria todas as tabelas definidas, se ainda não existirem
     Base.metadata.create_all(engine)
     return engine
 
@@ -93,7 +88,6 @@ def get_session():
 # ----------------------
 # UTILITÁRIOS PDF
 # ----------------------
-
 def extrair_texto_pdf_bytes(pdf_bytes):
     from io import BytesIO
     text_all = ''
@@ -118,10 +112,10 @@ def render_empresas(session, Empresa):
                 st.success("Empresa adicionada.")
             except Exception as e:
                 session.rollback(); st.error(f"Erro: {e}")
-    # tabela
     dados = [{"ID":e.empresa_id,"Nome":e.nome,"Forma":e.forma_juridica,"Data":e.data_constituicao}
              for e in session.query(Empresa).all()]
     st.table(pd.DataFrame(dados))
+
 
 def render_socios(session, Socio):
     st.header("Adicionar/Ver Sócios")
@@ -140,6 +134,7 @@ def render_socios(session, Socio):
              for s in session.query(Socio).all()]
     st.table(pd.DataFrame(dados))
 
+
 def render_upload_pdfs(session, PDFFile):
     st.header('Upload de PDFs')
     with st.form('form_upload', clear_on_submit=True):
@@ -148,34 +143,24 @@ def render_upload_pdfs(session, PDFFile):
             from datetime import date
             for file in uploaded:
                 pdf_bytes = file.getvalue()
-                novo = PDFFile(
-                    nome=file.name,
-                    data_upload=date.today(),
-                    conteudo=pdf_bytes
-                )
+                novo = PDFFile(nome=file.name, data_upload=date.today(), conteudo=pdf_bytes)
                 session.add(novo)
             session.commit()
             st.success('PDFs carregados com sucesso.')
-    # listar PDFs
-    dados = [{
-        'ID': f.file_id,
-        'Nome': f.nome,
-        'DataUpload': f.data_upload
-    } for f in session.query(PDFFile).all()]
+    dados = [{'ID': f.file_id, 'Nome': f.nome, 'DataUpload': f.data_upload}
+             for f in session.query(PDFFile).all()]
     st.table(pd.DataFrame(dados))
+
 
 def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
     st.header('Processamento de PDFs')
-    # Seleção de PDF
     pdfs = session.query(PDFFile).all()
     sel = st.selectbox('PDF armazenado', pdfs, format_func=lambda f: f.nome)
     if not sel:
         return
-    # Transcrição completa
     texto = extrair_texto_pdf_bytes(sel.conteudo)
     st.subheader('Transcrição Completa do PDF')
     st.text_area('Transcrição Completa', texto, height=600)
-    # Eventos existentes
     registros = session.query(EventoEmpresa).filter_by(arquivo_pdf_id=sel.file_id).all()
     st.subheader('Eventos registados para este PDF')
     if registros:
@@ -190,10 +175,9 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
         st.table(pd.DataFrame(dados))
     else:
         st.info('Nenhum evento registado para este PDF.')
-    # Seleção de tipo e empresa fora do formulário para atualizar layout
     st.subheader('Novo Evento')
     tipo = st.selectbox('Tipo de Evento', [
-        'constituicao_sociedade',
+        'Criação Empresa',
         'alteracao_contrato_aumento_capital',
         'alteracao_contrato',
         'designacao_membros',
@@ -202,8 +186,40 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
     ])
     emp_list = session.query(Empresa).all()
     emp = st.selectbox('Empresa', emp_list, format_func=lambda e: e.nome)
-    # Diferenciar formulários por tipo
-    if tipo == 'Inserir Accionista':
+    if tipo == 'Criação Empresa':
+        st.subheader('Dados da Criação de Empresa')
+        with st.form('form_criacao_empresa', clear_on_submit=True):
+            data_ev = st.date_input('Data do Evento')
+            nome_emp = st.text_input('Nome da Empresa')
+            nif_emp = st.text_input('NIF/NIPC da Empresa')
+            morada_emp = st.text_input('Morada da Empresa')
+            cap_emp = st.text_input('Capital Social')
+            submit = st.form_submit_button('Registrar Criação')
+        if submit:
+            try:
+                nova_emp = Empresa(
+                    nome=nome_emp,
+                    forma_juridica='SA',  # ou outro padrão
+                    data_constituicao=data_ev
+                )
+                session.add(nova_emp)
+                session.commit()
+                detalhes_val = {'capital_social': cap_emp, 'morada': morada_emp}
+                novo_ev = EventoEmpresa(
+                    empresa_id=nova_emp.empresa_id,
+                    socio_id=None,
+                    data_evento=data_ev,
+                    tipo='Criação Empresa',
+                    detalhes=detalhes_val,
+                    arquivo_pdf_id=sel.file_id
+                )
+                session.add(novo_ev)
+                session.commit()
+                st.success('Empresa criada e evento registado.')
+            except Exception as e:
+                session.rollback()
+                st.error(f'Erro: {e}')
+    elif tipo == 'Inserir Accionista':
         st.subheader('Dados do Acionista')
         with st.form('form_insert_accionista', clear_on_submit=True):
             data_ev = st.date_input('Data do Evento')
@@ -214,32 +230,26 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
             submit = st.form_submit_button('Registrar Acionista')
         if submit:
             try:
-                # Cria novo sócio
                 novo_soc = Socio(nome=nome_acc, nif=nif_acc, morada=morada_acc)
-                session.add(novo_soc)
-                session.commit()
-                socio_id = novo_soc.socio_id
+                session.add(novo_soc); session.commit()
                 detalhes_val = {
                     'nome_accionista': nome_acc,
                     'nif_accionista': nif_acc,
                     'morada_accionista': morada_acc,
                     'quota_accionista': quota_acc
                 }
-                # Registra evento
                 novo_ev = EventoEmpresa(
                     empresa_id=emp.empresa_id,
-                    socio_id=socio_id,
+                    socio_id=novo_soc.socio_id,
                     data_evento=data_ev,
-                    tipo=tipo,
+                    tipo='Inserir Accionista',
                     detalhes=detalhes_val,
                     arquivo_pdf_id=sel.file_id
                 )
-                session.add(novo_ev)
-                session.commit()
+                session.add(novo_ev); session.commit()
                 st.success('Acionista inserido e evento registado.')
             except Exception as e:
-                session.rollback()
-                st.error(f'Erro: {e}')
+                session.rollback(); st.error(f'Erro: {e}')
     else:
         with st.form('form_process_event', clear_on_submit=True):
             data_ev = st.date_input('Data do Evento')
@@ -250,27 +260,21 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
         if submit:
             try:
                 import json
-                try:
-                    detalhes_val = json.loads(detalhes_str)
-                except Exception:
-                    detalhes_val = {'descricao': detalhes_str}
-                socio_id = soc.socio_id if soc else None
+                detalhes_val = json.loads(detalhes_str) if detalhes_str.strip().startswith('{') else {'descricao': detalhes_str}
                 novo_ev = EventoEmpresa(
                     empresa_id=emp.empresa_id,
-                    socio_id=socio_id,
+                    socio_id=soc.socio_id if soc else None,
                     data_evento=data_ev,
                     tipo=tipo,
                     detalhes=detalhes_val,
                     arquivo_pdf_id=sel.file_id
                 )
-                session.add(novo_ev)
-                session.commit()
+                session.add(novo_ev); session.commit()
                 st.success('Evento registado com sucesso.')
             except Exception as e:
-                session.rollback()
-                st.error(f'Erro: {e}')
+                session.rollback(); st.error(f'Erro: {e}')
+
 # ----------------------
-# Aba Visualizar
 def render_visualizar(session, Empresa, Socio, EventoEmpresa):
     st.header("Visualizar Registos")
     opc = st.radio("Mostrar", ["Empresas","Sócios","Eventos"])
@@ -284,9 +288,6 @@ def render_visualizar(session, Empresa, Socio, EventoEmpresa):
         df = pd.DataFrame([{"ID":ev.evento_id,"Tipo":ev.tipo} for ev in session.query(EventoEmpresa).all()])
         st.table(df)
 
-
-# ----------------------
-# MAIN
 # ----------------------
 
 def main():
