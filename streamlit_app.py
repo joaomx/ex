@@ -155,20 +155,78 @@ def render_upload_pdfs(session, PDFFile):
 
 def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
     st.header('Processamento de PDFs')
-    # escolha de PDF
+    # Seleção de PDF carregado
     pdfs = session.query(PDFFile).all()
     sel = st.selectbox('PDF armazenado', pdfs, format_func=lambda f: f.nome)
     if sel:
+        # Exibir texto extraído
         texto = extrair_texto_pdf_bytes(sel.conteudo)
         st.subheader('Texto extraído')
         st.text_area('', texto, height=300)
-        # Aqui implementa extração manual ou identificação de eventos
-        st.subheader('Identificação de dados')
-        # ... formular para reconhecer dados relevantes ...
-        if st.button('Registrar eventos a partir deste PDF'):
-            st.success('Eventos registrados.')
 
+        # Mostrar eventos já registados para este PDF
+        st.subheader('Eventos registados a partir deste PDF')
+        registros = session.query(EventoEmpresa).filter_by(arquivo_pdf_id=sel.file_id).all()
+        if registros:
+            dados = []
+            for ev in registros:
+                dados.append({
+                    'ID': ev.evento_id,
+                    'Empresa': ev.empresa.nome if ev.empresa else None,
+                    'Sócio': ev.socio.nome if ev.socio else None,
+                    'Data Evento': ev.data_evento,
+                    'Tipo': ev.tipo,
+                    'Detalhes': ev.detalhes
+                })
+            st.table(pd.DataFrame(dados))
+        else:
+            st.info('Nenhum evento registado ainda para este PDF.')
 
+        # Formulário para registrar novo evento
+        st.subheader('Registar Novo Evento')
+        with st.form('form_process_pdf'):
+            data_ev = st.date_input('Data do Evento')
+            tipo = st.selectbox('Tipo de Evento', [
+                'constituicao_sociedade',
+                'alteracao_contrato_aumento_capital',
+                'alteracao_contrato',
+                'designacao_membros',
+                'cessacao_funcoes'
+            ])
+            # Associação empresa e sócio
+            empresas = session.query(Empresa).all()
+            emp = st.selectbox('Empresa', empresas, format_func=lambda e: e.nome)
+            socios = [None] + session.query(Socio).all()
+            soc = st.selectbox('Sócio (opcional)', socios, format_func=lambda s: s.nome if s else 'Nenhum')
+            detalhes_str = st.text_area('Detalhes do Evento (JSON ou texto livre)')
+            submitted = st.form_submit_button('Registrar Evento')
+        if submitted:
+            try:
+                # Parse detalhes: tentar JSON, fallback para string
+                import json
+                try:
+                    detalhes_val = json.loads(detalhes_str)
+                except Exception:
+                    detalhes_val = {'descricao': detalhes_str}
+                novo_ev = EventoEmpresa(
+                    empresa_id=emp.empresa_id,
+                    socio_id=soc.socio_id if soc else None,
+                    data_evento=data_ev,
+                    tipo=tipo,
+                    detalhes=detalhes_val,
+                    arquivo_pdf_id=sel.file_id
+                )
+                session.add(novo_ev)
+                session.commit()
+                st.success('Evento registado com sucesso.')
+                # Atualiza visualização
+                st.experimental_rerun()
+            except Exception as e:
+                session.rollback()
+                st.error(f'Erro ao registar evento: {e}')
+
+# ----------------------
+# Aba Visualizar
 def render_visualizar(session, Empresa, Socio, EventoEmpresa):
     st.header("Visualizar Registos")
     opc = st.radio("Mostrar", ["Empresas","Sócios","Eventos"])
@@ -182,10 +240,10 @@ def render_visualizar(session, Empresa, Socio, EventoEmpresa):
         df = pd.DataFrame([{"ID":ev.evento_id,"Tipo":ev.tipo} for ev in session.query(EventoEmpresa).all()])
         st.table(df)
 
+
 # ----------------------
 # MAIN
 # ----------------------
-
 
 def main():
     Empresa, Socio, PDFFile, EventoEmpresa = define_models()
