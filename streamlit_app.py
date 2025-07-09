@@ -380,6 +380,6 @@ def main():
         render_visualizar(session, Empresa, Socio, EventoEmpresa)
 
 # ----------------------
+# ----------------------
 if __name__ == '__main__':
-    main()
     main()
