@@ -170,6 +170,9 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
     sel = st.selectbox('PDF armazenado', pdfs, format_func=lambda f: f.nome)
     if sel:
         texto = extrair_texto_pdf_bytes(sel.conteudo)
+        # Transcrição completa para auxiliar extração
+        st.subheader('Transcrição Completa do PDF')
+        st.text_area('Transcrição Completa', texto, height=600)
         col1, col2 = st.columns(2)
         # Coluna da esquerda: tabela de eventos existentes
         with col1:
