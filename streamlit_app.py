@@ -362,5 +362,24 @@ def render_visualizar(session, Empresa, Socio, EventoEmpresa):
 
 # ----------------------
 
+def main():
+    # Inicializa modelos e sessão
+    Empresa, Socio, PDFFile, EventoEmpresa = define_models()
+    session = get_session()
+    # Menu lateral
+    page = st.sidebar.radio('Menu', ['Empresas','Sócios','Upload PDFs','Processar PDFs','Visualizar Registos'])
+    if page == 'Empresas':
+        render_empresas(session, Empresa)
+    elif page == 'Sócios':
+        render_socios(session, Socio)
+    elif page == 'Upload PDFs':
+        render_upload_pdfs(session, PDFFile)
+    elif page == 'Processar PDFs':
+        render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa)
+    else:
+        render_visualizar(session, Empresa, Socio, EventoEmpresa)
+
+# ----------------------
 if __name__ == '__main__':
+    main()
     main()
