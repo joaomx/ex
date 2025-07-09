@@ -158,28 +158,78 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
     sel = st.selectbox('PDF armazenado', pdfs, format_func=lambda f: f.nome)
     if not sel:
         return
+
+    # Transcrição completa
     texto = extrair_texto_pdf_bytes(sel.conteudo)
     st.subheader('Transcrição Completa do PDF')
     st.text_area('Transcrição Completa', texto, height=600)
+
+    # Eventos já registados
     registros = session.query(EventoEmpresa).filter_by(arquivo_pdf_id=sel.file_id).all()
     st.subheader('Eventos registados para este PDF')
     if registros:
-        dados = [{
+        df = pd.DataFrame([{
             'ID': ev.evento_id,
             'Empresa': ev.empresa.nome if ev.empresa else None,
             'Sócio': ev.socio.nome if ev.socio else None,
             'Data': ev.data_evento,
             'Tipo': ev.tipo,
             'Detalhes': ev.detalhes
-        } for ev in registros]
-        st.table(pd.DataFrame(dados))
+        } for ev in registros])
+        st.table(df)
     else:
         st.info('Nenhum evento registado para este PDF.')
+
+    # Escolha do tipo de evento
+    tipo = st.selectbox('Tipo de Evento', [
+        'Criação Empresa',
+        'alteracao_contrato_aumento_capital',
+        'alteracao_contrato',
+        'designacao_membros',
+        'cessacao_funcoes',
+        'Inserir Accionista'
+    ])
+
+    # Formulário para Criação de Empresa (sem select de empresa)
+    if tipo == 'Criação Empresa':
+        st.subheader('Dados da Criação de Empresa')
+        with st.form('form_criacao_empresa', clear_on_submit=True):
+            data_ev = st.date_input('Data do Evento')
+            nome_emp = st.text_input('Nome da Empresa')
+            nif_emp = st.text_input('NIF/NIPC da Empresa')
+            morada_emp = st.text_input('Morada da Empresa')
+            cap_emp = st.text_input('Capital Social')
+            submit = st.form_submit_button('Registrar Criação')
+        if submit:
+            try:
+                nova_emp = Empresa(
+                    nome=nome_emp,
+                    forma_juridica='SA',  # ajuste conforme necessário
+                    data_constituicao=data_ev
+                )
+                session.add(nova_emp)
+                session.commit()
+                detalhes_val = {'capital_social': cap_emp, 'morada': morada_emp}
+                novo_ev = EventoEmpresa(
+                    empresa_id=nova_emp.empresa_id,
+                    socio_id=None,
+                    data_evento=data_ev,
+                    tipo=tipo,
+                    detalhes=detalhes_val,
+                    arquivo_pdf_id=sel.file_id
+                )
+                session.add(novo_ev)
+                session.commit()
+                st.success('Empresa criada e evento registado.')
+            except Exception as e:
+                session.rollback()
+                st.error(f'Erro: {e}')
+
+    # Formulário para Inserir Accionista (com select de empresa)
     elif tipo == 'Inserir Accionista':
         st.subheader('Dados do Acionista')
         with st.form('form_insert_accionista', clear_on_submit=True):
             data_ev = st.date_input('Data do Evento')
-            # Associação de empresa apenas neste form
             emp_list = session.query(Empresa).all()
             emp = st.selectbox('Empresa', emp_list, format_func=lambda e: e.nome)
             nome_acc = st.text_input('Nome do Acionista')
@@ -201,48 +251,23 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
                     empresa_id=emp.empresa_id,
                     socio_id=novo_soc.socio_id,
                     data_evento=data_ev,
-                    tipo='Inserir Accionista',
+                    tipo=tipo,
                     detalhes=detalhes_val,
                     arquivo_pdf_id=sel.file_id
                 )
                 session.add(novo_ev); session.commit()
                 st.success('Acionista inserido e evento registado.')
             except Exception as e:
-                session.rollback(); st.error(f'Erro: {e}')
+                session.rollback()
+                st.error(f'Erro: {e}')
+
+    # Formulário genérico para os outros tipos
     else:
-        st.subheader('Dados do Acionista')
-        with st.form('form_insert_accionista', clear_on_submit=True):
-            data_ev = st.date_input('Data do Evento')
-            nome_acc = st.text_input('Nome do Acionista')
-            nif_acc = st.text_input('NIF/NIPC do Acionista')
-            morada_acc = st.text_input('Morada do Acionista')
-            quota_acc = st.text_input('Quota do Acionista')
-            submit = st.form_submit_button('Registrar Acionista')
-        if submit:
-            try:
-                novo_soc = Socio(nome=nome_acc, nif=nif_acc, morada=morada_acc)
-                session.add(novo_soc); session.commit()
-                detalhes_val = {
-                    'nome_accionista': nome_acc,
-                    'nif_accionista': nif_acc,
-                    'morada_accionista': morada_acc,
-                    'quota_accionista': quota_acc
-                }
-                novo_ev = EventoEmpresa(
-                    empresa_id=emp.empresa_id,
-                    socio_id=novo_soc.socio_id,
-                    data_evento=data_ev,
-                    tipo='Inserir Accionista',
-                    detalhes=detalhes_val,
-                    arquivo_pdf_id=sel.file_id
-                )
-                session.add(novo_ev); session.commit()
-                st.success('Acionista inserido e evento registado.')
-            except Exception as e:
-                session.rollback(); st.error(f'Erro: {e}')
-    else:
+        st.subheader('Dados do Evento')
         with st.form('form_process_event', clear_on_submit=True):
             data_ev = st.date_input('Data do Evento')
+            emp_list = session.query(Empresa).all()
+            emp = st.selectbox('Empresa', emp_list, format_func=lambda e: e.nome)
             socios = [None] + session.query(Socio).all()
             soc = st.selectbox('Sócio (opcional)', socios, format_func=lambda s: s.nome if s else 'Nenhum')
             detalhes_str = st.text_area('Detalhes do Evento', placeholder='JSON ou texto livre')
@@ -262,7 +287,9 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
                 session.add(novo_ev); session.commit()
                 st.success('Evento registado com sucesso.')
             except Exception as e:
-                session.rollback(); st.error(f'Erro: {e}')
+                session.rollback()
+                st.error(f'Erro: {e}')
+
 
 # ----------------------
 def render_visualizar(session, Empresa, Socio, EventoEmpresa):
