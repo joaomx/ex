@@ -278,32 +278,90 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
 def render_visualizar(session, Empresa, Socio, EventoEmpresa):
     st.header("Visualizar Registos")
     opc = st.radio("Mostrar", ["Empresas","Sócios","Eventos"])
+    # Empresas
     if opc == "Empresas":
-        df = pd.DataFrame([{"ID":e.empresa_id,"Nome":e.nome} for e in session.query(Empresa).all()])
-        st.table(df)
+        st.subheader("Lista de Empresas")
+        empresas = session.query(Empresa).all()
+        df_emp = pd.DataFrame([{
+            "ID": e.empresa_id,
+            "Nome": e.nome,
+            "Forma Jurídica": e.forma_juridica,
+            "Data Constituição": e.data_constituicao
+        } for e in empresas])
+        st.table(df_emp)
+        # Deleção de empresa
+        with st.expander("Eliminar Empresa"):
+            id_del = st.selectbox("Selecione ID da Empresa a eliminar", [e.empresa_id for e in empresas])
+            confirm = st.checkbox("Confirmar eliminação da empresa")
+            if st.button("Eliminar Empresa"):
+                if confirm:
+                    emp = session.get(Empresa, id_del)
+                    if emp:
+                        session.delete(emp)
+                        session.commit()
+                        st.success(f"Empresa {id_del} eliminada.")
+                    else:
+                        st.error("Empresa não encontrada.")
+                else:
+                    st.warning("Marque confirmar para proceder com a eliminação.")
+    # Sócios
     elif opc == "Sócios":
-        df = pd.DataFrame([{"ID":s.socio_id,"Nome":s.nome} for s in session.query(Socio).all()])
-        st.table(df)
+        st.subheader("Lista de Sócios")
+        socios = session.query(Socio).all()
+        df_soc = pd.DataFrame([{
+            "ID": s.socio_id,
+            "Nome": s.nome,
+            "NIF": s.nif,
+            "Morada": s.morada
+        } for s in socios])
+        st.table(df_soc)
+        # Deleção de sócio
+        with st.expander("Eliminar Sócio"):
+            id_del = st.selectbox("Selecione ID do Sócio a eliminar", [s.socio_id for s in socios])
+            confirm = st.checkbox("Confirmar eliminação do sócio")
+            if st.button("Eliminar Sócio"):
+                if confirm:
+                    soc = session.get(Socio, id_del)
+                    if soc:
+                        session.delete(soc)
+                        session.commit()
+                        st.success(f"Sócio {id_del} eliminado.")
+                    else:
+                        st.error("Sócio não encontrado.")
+                else:
+                    st.warning("Marque confirmar para proceder com a eliminação.")
+    # Eventos
     else:
-        df = pd.DataFrame([{"ID":ev.evento_id,"Tipo":ev.tipo} for ev in session.query(EventoEmpresa).all()])
-        st.table(df)
+        st.subheader("Lista de Eventos")
+        eventos = session.query(EventoEmpresa).all()
+        df_evt = pd.DataFrame([{
+            "ID": ev.evento_id,
+            "Empresa": ev.empresa.nome if ev.empresa else None,
+            "Sócio": ev.socio.nome if ev.socio else None,
+            "Data Evento": ev.data_evento,
+            "Tipo": ev.tipo,
+            "Detalhes": ev.detalhes,
+            "PDF ID": ev.arquivo_pdf_id
+        } for ev in eventos])
+        st.table(df_evt)
+        # Deleção de evento
+        with st.expander("Eliminar Evento"):
+            id_del = st.selectbox("Selecione ID do Evento a eliminar", [ev.evento_id for ev in eventos])
+            confirm = st.checkbox("Confirmar eliminação do evento")
+            if st.button("Eliminar Evento"):
+                if confirm:
+                    ev = session.get(EventoEmpresa, id_del)
+                    if ev:
+                        session.delete(ev)
+                        session.commit()
+                        st.success(f"Evento {id_del} eliminado.")
+                    else:
+                        st.error("Evento não encontrado.")
+                else:
+                    st.warning("Marque confirmar para proceder com a eliminação.")
 
 # ----------------------
 
-def main():
-    Empresa, Socio, PDFFile, EventoEmpresa = define_models()
-    session = get_session()
-    page = st.sidebar.radio('Menu', ['Empresas','Sócios','Upload PDFs','Processar PDFs','Visualizar Dados'])
-    if page == 'Empresas':
-        render_empresas(session, Empresa)
-    elif page == 'Sócios':
-        render_socios(session, Socio)
-    elif page == 'Upload PDFs':
-        render_upload_pdfs(session, PDFFile)
-    elif page == 'Processar PDFs':
-        render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa)
-    else:
-        render_visualizar(session, Empresa, Socio, EventoEmpresa)
-
 if __name__ == '__main__':
+    main()
     main()
