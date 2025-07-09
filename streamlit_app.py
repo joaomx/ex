@@ -166,96 +166,109 @@ def render_upload_pdfs(session, PDFFile):
 
 def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
     st.header('Processamento de PDFs')
+    # Seleção de PDF
     pdfs = session.query(PDFFile).all()
     sel = st.selectbox('PDF armazenado', pdfs, format_func=lambda f: f.nome)
-    if sel:
-        texto = extrair_texto_pdf_bytes(sel.conteudo)
-        # Transcrição completa para auxiliar extração
-        st.subheader('Transcrição Completa do PDF')
-        st.text_area('Transcrição Completa', texto, height=600)
-        col1, col2 = st.columns(2)
-        # Coluna da esquerda: tabela de eventos existentes
-        with col1:
-            st.subheader('Eventos registados')
-            registros = session.query(EventoEmpresa).filter_by(arquivo_pdf_id=sel.file_id).all()
-            if registros:
-                dados = [{
-                    'ID': ev.evento_id,
-                    'Empresa': ev.empresa.nome if ev.empresa else None,
-                    'Sócio': ev.socio.nome if ev.socio else None,
-                    'Data': ev.data_evento,
-                    'Tipo': ev.tipo,
-                    'Detalhes': ev.detalhes
-                } for ev in registros]
-                st.table(pd.DataFrame(dados))
-            else:
-                st.info('Nenhum evento registado para este PDF.')
-        # Coluna da direita: formulário de registo de novo evento
-        with col2:
-            st.subheader('Registar Novo Evento')
-            with st.form('form_process_pdf'):
-                data_ev = st.date_input('Data do Evento')
-                tipo = st.selectbox('Tipo de Evento', [
-                    'constituicao_sociedade',
-                    'alteracao_contrato_aumento_capital',
-                    'alteracao_contrato',
-                    'designacao_membros',
-                    'cessacao_funcoes',
-                    'Inserir Accionista'
-                ])
-                # Campo comum: Empresa
-                emp_list = session.query(Empresa).all()
-                emp = st.selectbox('Empresa', emp_list, format_func=lambda e: e.nome)
-                # Campos específicos para Inserir Accionista
-                if tipo == 'Inserir Accionista':
-                    st.subheader('Dados do Acionista')
-                    nome_acc = st.text_input('Nome do Acionista')
-                    nif_acc = st.text_input('NIF/NIPC do Acionista')
-                    morada_acc = st.text_input('Morada do Acionista')
-                    quota_acc = st.text_input('Quota do Acionista')
-                else:
-                    # Seleção opcional de sócio existente para outros eventos
-                    socios = [None] + session.query(Socio).all()
-                    soc = st.selectbox('Sócio (opcional)', socios, format_func=lambda s: s.nome if s else 'Nenhum')
-                    detalhes_str = st.text_area('Detalhes do Evento', placeholder='JSON ou texto livre')
-                submitted = st.form_submit_button('Registrar Evento')
-            if submitted:
+    if not sel:
+        return
+    # Transcrição completa
+    texto = extrair_texto_pdf_bytes(sel.conteudo)
+    st.subheader('Transcrição Completa do PDF')
+    st.text_area('Transcrição Completa', texto, height=600)
+    # Eventos existentes
+    registros = session.query(EventoEmpresa).filter_by(arquivo_pdf_id=sel.file_id).all()
+    st.subheader('Eventos registados para este PDF')
+    if registros:
+        dados = [{
+            'ID': ev.evento_id,
+            'Empresa': ev.empresa.nome if ev.empresa else None,
+            'Sócio': ev.socio.nome if ev.socio else None,
+            'Data': ev.data_evento,
+            'Tipo': ev.tipo,
+            'Detalhes': ev.detalhes
+        } for ev in registros]
+        st.table(pd.DataFrame(dados))
+    else:
+        st.info('Nenhum evento registado para este PDF.')
+    # Seleção de tipo e empresa fora do formulário para atualizar layout
+    st.subheader('Novo Evento')
+    tipo = st.selectbox('Tipo de Evento', [
+        'constituicao_sociedade',
+        'alteracao_contrato_aumento_capital',
+        'alteracao_contrato',
+        'designacao_membros',
+        'cessacao_funcoes',
+        'Inserir Accionista'
+    ])
+    emp_list = session.query(Empresa).all()
+    emp = st.selectbox('Empresa', emp_list, format_func=lambda e: e.nome)
+    # Diferenciar formulários por tipo
+    if tipo == 'Inserir Accionista':
+        st.subheader('Dados do Acionista')
+        with st.form('form_insert_accionista', clear_on_submit=True):
+            data_ev = st.date_input('Data do Evento')
+            nome_acc = st.text_input('Nome do Acionista')
+            nif_acc = st.text_input('NIF/NIPC do Acionista')
+            morada_acc = st.text_input('Morada do Acionista')
+            quota_acc = st.text_input('Quota do Acionista')
+            submit = st.form_submit_button('Registrar Acionista')
+        if submit:
+            try:
+                # Cria novo sócio
+                novo_soc = Socio(nome=nome_acc, nif=nif_acc, morada=morada_acc)
+                session.add(novo_soc)
+                session.commit()
+                socio_id = novo_soc.socio_id
+                detalhes_val = {
+                    'nome_accionista': nome_acc,
+                    'nif_accionista': nif_acc,
+                    'morada_accionista': morada_acc,
+                    'quota_accionista': quota_acc
+                }
+                # Registra evento
+                novo_ev = EventoEmpresa(
+                    empresa_id=emp.empresa_id,
+                    socio_id=socio_id,
+                    data_evento=data_ev,
+                    tipo=tipo,
+                    detalhes=detalhes_val,
+                    arquivo_pdf_id=sel.file_id
+                )
+                session.add(novo_ev)
+                session.commit()
+                st.success('Acionista inserido e evento registado.')
+            except Exception as e:
+                session.rollback()
+                st.error(f'Erro: {e}')
+    else:
+        with st.form('form_process_event', clear_on_submit=True):
+            data_ev = st.date_input('Data do Evento')
+            socios = [None] + session.query(Socio).all()
+            soc = st.selectbox('Sócio (opcional)', socios, format_func=lambda s: s.nome if s else 'Nenhum')
+            detalhes_str = st.text_area('Detalhes do Evento', placeholder='JSON ou texto livre')
+            submit = st.form_submit_button('Registrar Evento')
+        if submit:
+            try:
+                import json
                 try:
-                    from datetime import date
-                    import json
-                    # Define detalhes e relacionamentos conforme tipo
-                    if tipo == 'Inserir Accionista':
-                        detalhes_val = {
-                            'nome_accionista': nome_acc,
-                            'nif_accionista': nif_acc,
-                            'morada_accionista': morada_acc,
-                            'quota_accionista': quota_acc
-                        }
-                        # Criar novo sócio se necessário
-                        novo_soc = Socio(nome=nome_acc, nif=nif_acc, morada=morada_acc)
-                        session.add(novo_soc)
-                        session.commit()
-                        socio_id = novo_soc.socio_id
-                    else:
-                        try:
-                            detalhes_val = json.loads(detalhes_str)
-                        except Exception:
-                            detalhes_val = {'descricao': detalhes_str}
-                        socio_id = soc.socio_id if soc else None
-                    novo_ev = EventoEmpresa(
-                        empresa_id=emp.empresa_id,
-                        socio_id=socio_id,
-                        data_evento=data_ev,
-                        tipo=tipo,
-                        detalhes=detalhes_val,
-                        arquivo_pdf_id=sel.file_id
-                    )
-                    session.add(novo_ev)
-                    session.commit()
-                    st.success('Evento registado com sucesso.')
-                except Exception as e:
-                    session.rollback()
-                    st.error(f'Erro ao registar evento: {e}')
+                    detalhes_val = json.loads(detalhes_str)
+                except Exception:
+                    detalhes_val = {'descricao': detalhes_str}
+                socio_id = soc.socio_id if soc else None
+                novo_ev = EventoEmpresa(
+                    empresa_id=emp.empresa_id,
+                    socio_id=socio_id,
+                    data_evento=data_ev,
+                    tipo=tipo,
+                    detalhes=detalhes_val,
+                    arquivo_pdf_id=sel.file_id
+                )
+                session.add(novo_ev)
+                session.commit()
+                st.success('Evento registado com sucesso.')
+            except Exception as e:
+                session.rollback()
+                st.error(f'Erro: {e}')
 # ----------------------
 # Aba Visualizar
 def render_visualizar(session, Empresa, Socio, EventoEmpresa):
