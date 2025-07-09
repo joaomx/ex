@@ -94,14 +94,40 @@ def extrair_texto_pdf_bytes(pdf_bytes):
 # ----------------------
 # RENDERIZAÇÃO DE ABAS
 # ----------------------
-
 def render_empresas(session, Empresa):
-    # ... existente ...
-    pass
+    st.header("Adicionar Nova Empresa")
+    with st.form('form_empresa', clear_on_submit=True):
+        nome = st.text_input("Nome da Empresa")
+        forma = st.selectbox("Forma Jurídica", ["Lda","SA","Unipessoal","Cooperativa"])
+        data_const = st.date_input("Data de Constituição")
+        if st.form_submit_button("Guardar Empresa"):
+            try:
+                nova = Empresa(nome=nome, forma_juridica=forma, data_constituicao=data_const)
+                session.add(nova); session.commit()
+                st.success("Empresa adicionada.")
+            except Exception as e:
+                session.rollback(); st.error(f"Erro: {e}")
+    # tabela
+    dados = [{"ID":e.empresa_id,"Nome":e.nome,"Forma":e.forma_juridica,"Data":e.data_constituicao}
+             for e in session.query(Empresa).all()]
+    st.table(pd.DataFrame(dados))
 
 def render_socios(session, Socio):
-    # ... existente ...
-    pass
+    st.header("Adicionar/Ver Sócios")
+    with st.form('form_socio', clear_on_submit=True):
+        nome = st.text_input("Nome do Sócio")
+        nif = st.text_input("NIF/NIPC")
+        morada = st.text_input("Morada")
+        if st.form_submit_button("Guardar Sócio"):
+            try:
+                novo = Socio(nome=nome, nif=nif, morada=morada)
+                session.add(novo); session.commit()
+                st.success("Sócio adicionado.")
+            except Exception as e:
+                session.rollback(); st.error(f"Erro: {e}")
+    dados = [{"ID":s.socio_id,"Nome":s.nome,"NIF":s.nif,"Morada":s.morada}
+             for s in session.query(Socio).all()]
+    st.table(pd.DataFrame(dados))
 
 def render_upload_pdfs(session, PDFFile):
     st.header('Upload de PDFs')
@@ -144,12 +170,22 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
 
 
 def render_visualizar(session, Empresa, Socio, EventoEmpresa):
-    # ... existente ...
-    pass
+    st.header("Visualizar Registos")
+    opc = st.radio("Mostrar", ["Empresas","Sócios","Eventos"])
+    if opc == "Empresas":
+        df = pd.DataFrame([{"ID":e.empresa_id,"Nome":e.nome} for e in session.query(Empresa).all()])
+        st.table(df)
+    elif opc == "Sócios":
+        df = pd.DataFrame([{"ID":s.socio_id,"Nome":s.nome} for s in session.query(Socio).all()])
+        st.table(df)
+    else:
+        df = pd.DataFrame([{"ID":ev.evento_id,"Tipo":ev.tipo} for ev in session.query(EventoEmpresa).all()])
+        st.table(df)
 
 # ----------------------
 # MAIN
 # ----------------------
+
 
 def main():
     Empresa, Socio, PDFFile, EventoEmpresa = define_models()
