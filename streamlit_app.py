@@ -65,20 +65,25 @@ def define_models():
 # ----------------------
 
 def get_engine():
+    """
+    Inicializa o engine SQLite, aplica migrações leves para colunas adicionais
+    e cria as tabelas caso não existam.
+    """
     new_db = not os.path.exists(DB_FILE)
     engine = create_engine(DB_URL, connect_args={'check_same_thread': False})
     if not new_db:
         with engine.connect() as conn:
-            # migrations para colunas adicionais
+            # Migração para coluna 'nif' em 'socio'
             cols_socio = [r[1] for r in conn.execute(text("PRAGMA table_info(socio)"))]
             if 'nif' not in cols_socio:
                 conn.execute(text("ALTER TABLE socio ADD COLUMN nif TEXT"))
+            # Migração para coluna 'arquivo_pdf_id' em 'evento_empresa'
             cols_evt = [r[1] for r in conn.execute(text("PRAGMA table_info(evento_empresa)"))]
             if 'arquivo_pdf_id' not in cols_evt:
                 conn.execute(text("ALTER TABLE evento_empresa ADD COLUMN arquivo_pdf_id INTEGER"))
-    # Criar tabelas faltantes
+    # Cria todas as tabelas definidas, se ainda não existirem
     Base.metadata.create_all(engine)
-    return enginereturn engine
+    return engine
 
 def get_session():
     engine = get_engine()
