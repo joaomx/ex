@@ -69,9 +69,16 @@ def get_engine():
     engine = create_engine(DB_URL, connect_args={'check_same_thread': False})
     if not new_db:
         with engine.connect() as conn:
-            # migrations omitted
-            pass
+            # migrations para colunas adicionais
+            cols_socio = [r[1] for r in conn.execute(text("PRAGMA table_info(socio)"))]
+            if 'nif' not in cols_socio:
+                conn.execute(text("ALTER TABLE socio ADD COLUMN nif TEXT"))
+            cols_evt = [r[1] for r in conn.execute(text("PRAGMA table_info(evento_empresa)"))]
+            if 'arquivo_pdf_id' not in cols_evt:
+                conn.execute(text("ALTER TABLE evento_empresa ADD COLUMN arquivo_pdf_id INTEGER"))
+    # Criar tabelas faltantes
     Base.metadata.create_all(engine)
+    return engine(engine)
     return engine
 
 def get_session():
@@ -216,6 +223,7 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
                 except Exception as e:
                     session.rollback()
                     st.error(f'Erro ao registar evento: {e}')
+
 # ----------------------
 # Aba Visualizar
 def render_visualizar(session, Empresa, Socio, EventoEmpresa):
