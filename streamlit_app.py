@@ -179,15 +179,14 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
             st.subheader('Eventos registados')
             registros = session.query(EventoEmpresa).filter_by(arquivo_pdf_id=sel.file_id).all()
             if registros:
-                dados = []
-                for ev in registros:
-                    dados.append({
-                        'ID': ev.evento_id,
-                        'Empresa': ev.empresa.nome if ev.empresa else None,
-                        'Sócio': ev.socio.nome if ev.socio else None,
-                        'Data': ev.data_evento,
-                        'Tipo': ev.tipo
-                    })
+                dados = [{
+                    'ID': ev.evento_id,
+                    'Empresa': ev.empresa.nome if ev.empresa else None,
+                    'Sócio': ev.socio.nome if ev.socio else None,
+                    'Data': ev.data_evento,
+                    'Tipo': ev.tipo,
+                    'Detalhes': ev.detalhes
+                } for ev in registros]
                 st.table(pd.DataFrame(dados))
             else:
                 st.info('Nenhum evento registado para este PDF.')
@@ -201,24 +200,51 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
                     'alteracao_contrato_aumento_capital',
                     'alteracao_contrato',
                     'designacao_membros',
-                    'cessacao_funcoes'
+                    'cessacao_funcoes',
+                    'Inserir Accionista'
                 ])
-                empresas = session.query(Empresa).all()
-                emp = st.selectbox('Empresa', empresas, format_func=lambda e: e.nome)
-                socios = [None] + session.query(Socio).all()
-                soc = st.selectbox('Sócio (opcional)', socios, format_func=lambda s: s.nome if s else 'Nenhum')
-                detalhes_str = st.text_area('Detalhes do Evento', placeholder='JSON ou texto livre')
+                # Campo comum: Empresa
+                emp_list = session.query(Empresa).all()
+                emp = st.selectbox('Empresa', emp_list, format_func=lambda e: e.nome)
+                # Campos específicos para Inserir Accionista
+                if tipo == 'Inserir Accionista':
+                    st.subheader('Dados do Acionista')
+                    nome_acc = st.text_input('Nome do Acionista')
+                    nif_acc = st.text_input('NIF/NIPC do Acionista')
+                    morada_acc = st.text_input('Morada do Acionista')
+                    quota_acc = st.text_input('Quota do Acionista')
+                else:
+                    # Seleção opcional de sócio existente para outros eventos
+                    socios = [None] + session.query(Socio).all()
+                    soc = st.selectbox('Sócio (opcional)', socios, format_func=lambda s: s.nome if s else 'Nenhum')
+                    detalhes_str = st.text_area('Detalhes do Evento', placeholder='JSON ou texto livre')
                 submitted = st.form_submit_button('Registrar Evento')
             if submitted:
                 try:
+                    from datetime import date
                     import json
-                    try:
-                        detalhes_val = json.loads(detalhes_str)
-                    except Exception:
-                        detalhes_val = {'descricao': detalhes_str}
+                    # Define detalhes e relacionamentos conforme tipo
+                    if tipo == 'Inserir Accionista':
+                        detalhes_val = {
+                            'nome_accionista': nome_acc,
+                            'nif_accionista': nif_acc,
+                            'morada_accionista': morada_acc,
+                            'quota_accionista': quota_acc
+                        }
+                        # Criar novo sócio se necessário
+                        novo_soc = Socio(nome=nome_acc, nif=nif_acc, morada=morada_acc)
+                        session.add(novo_soc)
+                        session.commit()
+                        socio_id = novo_soc.socio_id
+                    else:
+                        try:
+                            detalhes_val = json.loads(detalhes_str)
+                        except Exception:
+                            detalhes_val = {'descricao': detalhes_str}
+                        socio_id = soc.socio_id if soc else None
                     novo_ev = EventoEmpresa(
                         empresa_id=emp.empresa_id,
-                        socio_id=soc.socio_id if soc else None,
+                        socio_id=socio_id,
                         data_evento=data_ev,
                         tipo=tipo,
                         detalhes=detalhes_val,
@@ -230,7 +256,6 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
                 except Exception as e:
                     session.rollback()
                     st.error(f'Erro ao registar evento: {e}')
-
 # ----------------------
 # Aba Visualizar
 def render_visualizar(session, Empresa, Socio, EventoEmpresa):
