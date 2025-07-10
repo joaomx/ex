@@ -24,7 +24,7 @@ def define_models():
         nome = Column(String, nullable=False)
         forma_juridica = Column(String, nullable=False)
         data_constituicao = Column(Date, nullable=False)
-        observacoes = Column(String, nullable=True)  # campo para observações
+        observacoes = Column(String, nullable=True)
         eventos = relationship(
             'EventoEmpresa', back_populates='empresa', cascade='all, delete-orphan'
         )
@@ -64,7 +64,6 @@ def define_models():
 # ----------------------
 # INICIALIZAÇÃO DB
 # ----------------------
-
 def get_engine():
     """
     Inicializa o engine SQLite, aplica migrações leves e cria tabelas.
@@ -85,6 +84,7 @@ def get_engine():
                 conn.execute(text("ALTER TABLE evento_empresa ADD COLUMN arquivo_pdf_id INTEGER"))
     Base.metadata.create_all(engine)
     return engine
+
 
 def get_session():
     engine = get_engine()
@@ -135,7 +135,9 @@ def render_empresas(session, Empresa):
     } for e in session.query(Empresa).all()]
     st.table(pd.DataFrame(dados))
 
-
+# ----------------------
+# RENDERIZAÇÃO DE ABAS (cont.)
+# ----------------------
 def render_socios(session, Socio):
     st.header("Adicionar/Ver Sócios")
     with st.form('form_socio', clear_on_submit=True):
@@ -178,12 +180,9 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
     if not sel:
         return
 
-    # Transcrição completa
     texto = extrair_texto_pdf_bytes(sel.conteudo)
     st.subheader('Transcrição Completa do PDF')
     st.text_area('Transcrição Completa', texto, height=600)
-
-    # Eventos já registados
     registros = session.query(EventoEmpresa).filter_by(arquivo_pdf_id=sel.file_id).all()
     st.subheader('Eventos registados para este PDF')
     if registros:
@@ -199,7 +198,6 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
     else:
         st.info('Nenhum evento registado para este PDF.')
 
-    # Escolha do tipo de evento
     tipo = st.selectbox('Tipo de Evento', [
         'Criação Empresa',
         'alteracao_contrato_aumento_capital',
@@ -209,7 +207,6 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
         'Inserir Accionista'
     ])
 
-    # Criação Empresa
     if tipo == 'Criação Empresa':
         st.subheader('Dados da Criação de Empresa')
         with st.form('form_criacao_empresa', clear_on_submit=True):
@@ -221,33 +218,22 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
             submit = st.form_submit_button('Registrar Criação')
         if submit:
             try:
-                nova_emp = Empresa(
-                    nome=nome_emp,
-                    forma_juridica='SA',
-                    data_constituicao=data_ev
-                )
+                nova_emp = Empresa(nome=nome_emp, forma_juridica='SA', data_constituicao=data_ev)
                 session.add(nova_emp); session.commit()
                 detalhes_val = {'capital_social': cap_emp, 'morada': morada_emp}
-                novo_ev = EventoEmpresa(
-                    empresa_id=nova_emp.empresa_id,
-                    socio_id=None,
-                    data_evento=data_ev,
-                    tipo=tipo,
-                    detalhes=detalhes_val,
-                    arquivo_pdf_id=sel.file_id
-                )
+                novo_ev = EventoEmpresa(empresa_id=nova_emp.empresa_id, socio_id=None,
+                                        data_evento=data_ev, tipo=tipo,
+                                        detalhes=detalhes_val, arquivo_pdf_id=sel.file_id)
                 session.add(novo_ev); session.commit()
                 st.success('Empresa criada e evento registado.')
             except Exception as e:
                 session.rollback(); st.error(f'Erro: {e}')
 
-    # Inserir Accionista
     elif tipo == 'Inserir Accionista':
         st.subheader('Dados do Acionista')
         with st.form('form_insert_accionista', clear_on_submit=True):
             data_ev = st.date_input('Data do Evento')
-            emp_list = session.query(Empresa).all()
-            emp = st.selectbox('Empresa', emp_list, format_func=lambda e: e.nome)
+            emp = st.selectbox('Empresa', session.query(Empresa).all(), format_func=lambda e: e.nome)
             nome_acc = st.text_input('Nome do Acionista')
             nif_acc = st.text_input('NIF/NIPC do Acionista')
             morada_acc = st.text_input('Morada do Acionista')
@@ -257,179 +243,123 @@ def render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa):
             try:
                 novo_soc = Socio(nome=nome_acc, nif=nif_acc, morada=morada_acc)
                 session.add(novo_soc); session.commit()
-                detalhes_val = {
-                    'nome_accionista': nome_acc,
-                    'nif_accionista': nif_acc,
-                    'morada_accionista': morada_acc,
-                    'quota_accionista': quota_acc
-                }
-                novo_ev = EventoEmpresa(
-                    empresa_id=emp.empresa_id,
-                    socio_id=novo_soc.socio_id,
-                    data_evento=data_ev,
-                    tipo=tipo,
-                    detalhes=detalhes_val,
-                    arquivo_pdf_id=sel.file_id
-                )
+                detalhes_val = {'nome_accionista': nome_acc, 'nif_accionista': nif_acc,
+                                'morada_accionista': morada_acc, 'quota_accionista': quota_acc}
+                novo_ev = EventoEmpresa(empresa_id=emp.empresa_id, socio_id=novo_soc.socio_id,
+                                        data_evento=data_ev, tipo=tipo,
+                                        detalhes=detalhes_val, arquivo_pdf_id=sel.file_id)
                 session.add(novo_ev); session.commit()
                 st.success('Acionista inserido e evento registado.')
             except Exception as e:
                 session.rollback(); st.error(f'Erro: {e}')
 
-    # Alteração de Contrato e Aumento de Capital
     elif tipo == 'alteracao_contrato_aumento_capital':
         st.subheader('Dados de Alteração de Contrato e Aumento de Capital')
         with st.form('form_alteracao_contrato', clear_on_submit=True):
             data_ev = st.date_input('Data do Evento')
-            emp_list = session.query(Empresa).all()
-            emp = st.selectbox('Empresa', emp_list, format_func=lambda e: e.nome)
+            emp = st.selectbox('Empresa', session.query(Empresa).all(), format_func=lambda e: e.nome)
             montante = st.text_input('Montante do Aumento')
             observacoes = st.text_area('Observações')
             submit = st.form_submit_button('Registrar Alteração')
         if submit:
             try:
                 detalhes_val = {'montante_aumento': montante, 'observacoes': observacoes}
-                novo_ev = EventoEmpresa(
-                    empresa_id=emp.empresa_id,
-                    socio_id=None,
-                    data_evento=data_ev,
-                    tipo=tipo,
-                    detalhes=detalhes_val,
-                    arquivo_pdf_id=sel.file_id
-                )
+                novo_ev = EventoEmpresa(empresa_id=emp.empresa_id, socio_id=None,
+                                        data_evento=data_ev, tipo=tipo,
+                                        detalhes=detalhes_val, arquivo_pdf_id=sel.file_id)
                 session.add(novo_ev); session.commit()
                 st.success('Evento de alteração registado com sucesso.')
             except Exception as e:
                 session.rollback(); st.error(f'Erro: {e}')
 
-    # Outros tipos genéricos
     else:
         st.subheader('Dados do Evento')
         with st.form('form_process_event', clear_on_submit=True):
             data_ev = st.date_input('Data do Evento')
-            emp_list = session.query(Empresa).all()
-            emp = st.selectbox('Empresa', emp_list, format_func=lambda e: e.nome)
-            socios = [None] + session.query(Socio).all()
-            soc = st.selectbox('Sócio (opcional)', socios, format_func=lambda s: s.nome if s else 'Nenhum')
+            emp = st.selectbox('Empresa', session.query(Empresa).all(), format_func=lambda e: e.nome)
+            soc = st.selectbox('Sócio (opcional)', [None] + session.query(Socio).all(),
+                               format_func=lambda s: s.nome if s else 'Nenhum')
             detalhes_str = st.text_area('Detalhes do Evento', placeholder='JSON ou texto livre')
             submit = st.form_submit_button('Registrar Evento')
         if submit:
             try:
                 import json
                 detalhes_val = json.loads(detalhes_str) if detalhes_str.strip().startswith('{') else {'descricao': detalhes_str}
-                novo_ev = EventoEmpresa(
-                    empresa_id=emp.empresa_id,
-                    socio_id=soc.socio_id if soc else None,
-                    data_evento=data_ev,
-                    tipo=tipo,
-                    detalhes=detalhes_val,
-                    arquivo_pdf_id=sel.file_id
-                )
+                novo_ev = EventoEmpresa(empresa_id=emp.empresa_id,
+                                        socio_id=soc.socio_id if soc else None,
+                                        data_evento=data_ev, tipo=tipo,
+                                        detalhes=detalhes_val,
+                                        arquivo_pdf_id=sel.file_id)
                 session.add(novo_ev); session.commit()
                 st.success('Evento registado com sucesso.')
             except Exception as e:
                 session.rollback(); st.error(f'Erro: {e}')
+
+# ----------------------
+# Backup & Restore
+# ----------------------
+def render_backup():
+    st.header('Backup de Dados')
+    # Exportar
+    st.subheader('Exportar Base de Dados')
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, 'rb') as f:
+            db_bytes = f.read()
+        st.download_button('Download backup (.db)', db_bytes, 'empresas.db', mime='application/octet-stream')
+    else:
+        st.info('Ainda não existe base de dados.')
+    # Importar
+    st.subheader('Importar Base de Dados')
+    uploaded_db = st.file_uploader('Selecione ficheiro .db para restaurar', type=['db'])
+    if uploaded_db:
+        with open(DB_FILE, 'wb') as f:
+            f.write(uploaded_db.getvalue())
+        st.success('Backup importado com sucesso!')
+
+# ----------------------
+# Visualizar Registos
 # ----------------------
 def render_visualizar(session, Empresa, Socio, EventoEmpresa):
     st.header("Visualizar Registos")
     opc = st.radio("Mostrar", ["Empresas","Sócios","Eventos"])
-    # Empresas
     if opc == "Empresas":
-        st.subheader("Lista de Empresas")
         empresas = session.query(Empresa).all()
-        df_emp = pd.DataFrame([{
-            "ID": e.empresa_id,
-            "Nome": e.nome,
-            "Forma Jurídica": e.forma_juridica,
-            "Data Constituição": e.data_constituicao
-        } for e in empresas])
+        df_emp = pd.DataFrame([{"ID":e.empresa_id,"Nome":e.nome,"Forma":e.forma_juridica,
+                               "Data":e.data_constituicao,"Obs":e.observacoes} for e in empresas])
         st.table(df_emp)
-        # Deleção de empresa
         with st.expander("Eliminar Empresa"):
-            id_del = st.selectbox("Selecione ID da Empresa a eliminar", [e.empresa_id for e in empresas])
-            confirm = st.checkbox("Confirmar eliminação da empresa")
+            id_del = st.selectbox("ID", [e.empresa_id for e in empresas])
             if st.button("Eliminar Empresa"):
-                if confirm:
-                    emp = session.get(Empresa, id_del)
-                    if emp:
-                        session.delete(emp)
-                        session.commit()
-                        st.success(f"Empresa {id_del} eliminada.")
-                    else:
-                        st.error("Empresa não encontrada.")
-                else:
-                    st.warning("Marque confirmar para proceder com a eliminação.")
-    # Sócios
+                emp = session.get(Empresa, id_del)
+                session.delete(emp); session.commit(); st.success("Empresa eliminada.")
     elif opc == "Sócios":
-        st.subheader("Lista de Sócios")
         socios = session.query(Socio).all()
-        df_soc = pd.DataFrame([{
-            "ID": s.socio_id,
-            "Nome": s.nome,
-            "NIF": s.nif,
-            "Morada": s.morada
-        } for s in socios])
+        df_soc = pd.DataFrame([{"ID":s.socio_id,"Nome":s.nome,"NIF":s.nif,"Morada":s.morada} for s in socios])
         st.table(df_soc)
-        # Deleção de sócio
         with st.expander("Eliminar Sócio"):
-            id_del = st.selectbox("Selecione ID do Sócio a eliminar", [s.socio_id for s in socios])
-            confirm = st.checkbox("Confirmar eliminação do sócio")
+            id_del = st.selectbox("ID", [s.socio_id for s in socios])
             if st.button("Eliminar Sócio"):
-                if confirm:
-                    soc = session.get(Socio, id_del)
-                    if soc:
-                        session.delete(soc)
-                        session.commit()
-                        st.success(f"Sócio {id_del} eliminado.")
-                    else:
-                        st.error("Sócio não encontrado.")
-                else:
-                    st.warning("Marque confirmar para proceder com a eliminação.")
-    # Eventos
+                soc = session.get(Socio, id_del)
+                session.delete(soc); session.commit(); st.success("Sócio eliminado.")
     else:
-        st.subheader("Lista de Eventos")
         eventos = session.query(EventoEmpresa).all()
-        df_evt = pd.DataFrame([{
-            "ID": ev.evento_id,
-            "Empresa": ev.empresa.nome if ev.empresa else None,
-            "Sócio": ev.socio.nome if ev.socio else None,
-            "Data Evento": ev.data_evento,
-            "Tipo": ev.tipo,
-            "Detalhes": ev.detalhes,
-            "PDF ID": ev.arquivo_pdf_id
-        } for ev in eventos])
+        df_evt = pd.DataFrame([{"ID":ev.evento_id,"Emp":ev.empresa.nome if ev.empresa else None,
+                                "Soc":ev.socio.nome if ev.socio else None,
+                                "Data":ev.data_evento,"Tipo":ev.tipo} for ev in eventos])
         st.table(df_evt)
-        # Deleção de evento
         with st.expander("Eliminar Evento"):
-            id_del = st.selectbox("Selecione ID do Evento a eliminar", [ev.evento_id for ev in eventos])
-            confirm = st.checkbox("Confirmar eliminação do evento")
+            id_del = st.selectbox("ID", [ev.evento_id for ev in eventos])
             if st.button("Eliminar Evento"):
-                if confirm:
-                    ev = session.get(EventoEmpresa, id_del)
-                    if ev:
-                        session.delete(ev)
-                        session.commit()
-                        st.success(f"Evento {id_del} eliminado.")
-                    else:
-                        st.error("Evento não encontrado.")
-                else:
-                    st.warning("Marque confirmar para proceder com a eliminação.")
+                evt = session.get(EventoEmpresa, id_del)
+                session.delete(evt); session.commit(); st.success("Evento eliminado.")
 
 # ----------------------
-
+# MAIN
+# ----------------------
 def main():
-    # Inicializa modelos e sessão
     Empresa, Socio, PDFFile, EventoEmpresa = define_models()
     session = get_session()
-    # Menu lateral
-    page = st.sidebar.radio('Menu', [
-        'Empresas',
-        'Sócios',
-        'Upload PDFs',
-        'Processar PDFs',
-        'Visualizar Registos',
-        'Backup'
-    ])
+    page = st.sidebar.radio('Menu', ['Empresas','Sócios','Upload PDFs','Processar PDFs','Visualizar Registos','Backup'])
     if page == 'Empresas':
         render_empresas(session, Empresa)
     elif page == 'Sócios':
@@ -442,6 +372,9 @@ def main():
         render_visualizar(session, Empresa, Socio, EventoEmpresa)
     else:
         render_backup()
+
+if __name__ == '__main__':
+    main()
 
 # ----------------------
 if __name__ == '__main__':
