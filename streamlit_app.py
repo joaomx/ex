@@ -24,6 +24,7 @@ def define_models():
         nome = Column(String, nullable=False)
         forma_juridica = Column(String, nullable=False)
         data_constituicao = Column(Date, nullable=False)
+        observacoes = Column(String, nullable=True)  # campo para observações
         eventos = relationship(
             'EventoEmpresa', back_populates='empresa', cascade='all, delete-orphan'
         )
@@ -63,11 +64,19 @@ def define_models():
 # ----------------------
 # INICIALIZAÇÃO DB
 # ----------------------
+
 def get_engine():
+    """
+    Inicializa o engine SQLite, aplica migrações leves e cria tabelas.
+    """
     new_db = not os.path.exists(DB_FILE)
     engine = create_engine(DB_URL, connect_args={'check_same_thread': False})
     if not new_db:
         with engine.connect() as conn:
+            # Migração para adicionar coluna observacoes em empresa
+            cols_emp = [r[1] for r in conn.execute(text("PRAGMA table_info(empresa)"))]
+            if 'observacoes' not in cols_emp:
+                conn.execute(text("ALTER TABLE empresa ADD COLUMN observacoes TEXT"))
             cols_socio = [r[1] for r in conn.execute(text("PRAGMA table_info(socio)"))]
             if 'nif' not in cols_socio:
                 conn.execute(text("ALTER TABLE socio ADD COLUMN nif TEXT"))
@@ -94,51 +103,36 @@ def extrair_texto_pdf_bytes(pdf_bytes):
     return text_all
 
 # ----------------------
-# EXPORTAÇÃO / IMPORTAÇÃO DE DADOS
-# ----------------------
-def render_backup():
-    st.header('Backup de Dados')
-    # Exportar SQLite
-    st.subheader('Exportar Base de Dados')
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, 'rb') as f:
-            db_bytes = f.read()
-        st.download_button(
-            'Download backup (.db)',
-            data=db_bytes,
-            file_name='empresas.db',
-            mime='application/octet-stream'
-        )
-    else:
-        st.info('Ainda não existe base de dados.')
-
-    # Importar SQLite
-    st.subheader('Importar Base de Dados')
-    uploaded_db = st.file_uploader('Selecione ficheiro .db para restaurar', type=['db'])
-    if uploaded_db:
-        with open(DB_FILE, 'wb') as f:
-            f.write(uploaded_db.getvalue())
-        st.success('Backup importado com sucesso!')
-        # st.experimental_rerun() removed: unnecessary reload to avoid AttributeError
-
-# ----------------------
 # RENDERIZAÇÃO DE ABAS
 # ----------------------
 def render_empresas(session, Empresa):
     st.header("Adicionar Nova Empresa")
     with st.form('form_empresa', clear_on_submit=True):
         nome = st.text_input("Nome da Empresa")
-        forma = st.selectbox("Forma Jurídica", ["Lda","SA","Unipessoal","Cooperativa"])
+        forma = st.selectbox("Forma Jurídica", ["Lda","SA","Unipessoal","Cooperativa","Internacional"])
         data_const = st.date_input("Data de Constituição")
+        observacao = st.text_area("Observações (opcional)")
         if st.form_submit_button("Guardar Empresa"):
             try:
-                nova = Empresa(nome=nome, forma_juridica=forma, data_constituicao=data_const)
-                session.add(nova); session.commit()
+                nova = Empresa(
+                    nome=nome,
+                    forma_juridica=forma,
+                    data_constituicao=data_const,
+                    observacoes=observacao or None
+                )
+                session.add(nova)
+                session.commit()
                 st.success("Empresa adicionada.")
             except Exception as e:
-                session.rollback(); st.error(f"Erro: {e}")
-    dados = [{"ID":e.empresa_id,"Nome":e.nome,"Forma":e.forma_juridica,"Data":e.data_constituicao}
-             for e in session.query(Empresa).all()]
+                session.rollback()
+                st.error(f"Erro: {e}")
+    dados = [{
+        "ID": e.empresa_id,
+        "Nome": e.nome,
+        "Forma Jurídica": e.forma_juridica,
+        "Data Constituição": e.data_constituicao,
+        "Observações": e.observacoes
+    } for e in session.query(Empresa).all()]
     st.table(pd.DataFrame(dados))
 
 
