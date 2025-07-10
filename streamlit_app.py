@@ -119,7 +119,7 @@ def render_backup():
         with open(DB_FILE, 'wb') as f:
             f.write(uploaded_db.getvalue())
         st.success('Backup importado com sucesso!')
-        st.experimental_rerun()
+        # st.experimental_rerun() removed: unnecessary reload to avoid AttributeError
 
 # ----------------------
 # RENDERIZAÇÃO DE ABAS
