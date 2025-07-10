@@ -64,9 +64,6 @@ def define_models():
 # INICIALIZAÇÃO DB
 # ----------------------
 def get_engine():
-    """
-    Inicializa o engine SQLite, aplica migrações leves e cria tabelas.
-    """
     new_db = not os.path.exists(DB_FILE)
     engine = create_engine(DB_URL, connect_args={'check_same_thread': False})
     if not new_db:
@@ -95,6 +92,34 @@ def extrair_texto_pdf_bytes(pdf_bytes):
         for page in pdf.pages:
             text_all += page.extract_text() or ''
     return text_all
+
+# ----------------------
+# EXPORTAÇÃO / IMPORTAÇÃO DE DADOS
+# ----------------------
+def render_backup():
+    st.header('Backup de Dados')
+    # Exportar SQLite
+    st.subheader('Exportar Base de Dados')
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, 'rb') as f:
+            db_bytes = f.read()
+        st.download_button(
+            'Download backup (.db)',
+            data=db_bytes,
+            file_name='empresas.db',
+            mime='application/octet-stream'
+        )
+    else:
+        st.info('Ainda não existe base de dados.')
+
+    # Importar SQLite
+    st.subheader('Importar Base de Dados')
+    uploaded_db = st.file_uploader('Selecione ficheiro .db para restaurar', type=['db'])
+    if uploaded_db:
+        with open(DB_FILE, 'wb') as f:
+            f.write(uploaded_db.getvalue())
+        st.success('Backup importado com sucesso!')
+        st.experimental_rerun()
 
 # ----------------------
 # RENDERIZAÇÃO DE ABAS
@@ -403,7 +428,14 @@ def main():
     Empresa, Socio, PDFFile, EventoEmpresa = define_models()
     session = get_session()
     # Menu lateral
-    page = st.sidebar.radio('Menu', ['Empresas','Sócios','Upload PDFs','Processar PDFs','Visualizar Registos'])
+    page = st.sidebar.radio('Menu', [
+        'Empresas',
+        'Sócios',
+        'Upload PDFs',
+        'Processar PDFs',
+        'Visualizar Registos',
+        'Backup'
+    ])
     if page == 'Empresas':
         render_empresas(session, Empresa)
     elif page == 'Sócios':
@@ -412,10 +444,11 @@ def main():
         render_upload_pdfs(session, PDFFile)
     elif page == 'Processar PDFs':
         render_process_pdfs(session, PDFFile, Empresa, Socio, EventoEmpresa)
-    else:
+    elif page == 'Visualizar Registos':
         render_visualizar(session, Empresa, Socio, EventoEmpresa)
+    else:
+        render_backup()
 
-# ----------------------
 # ----------------------
 if __name__ == '__main__':
     main()
